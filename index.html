@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chase Bank</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  body{background:#F5F7FA;color:#1a1a1a}
+  .header{background:#117ACA;color:#fff;padding:25px;border-bottom-left-radius:25px;border-bottom-right-radius:25px;text-align:center}
+  .header h1{font-size:28px;font-weight:800}
+  .balance-card{background:#fff;margin:20px;border-radius:15px;padding:25px;box-shadow:0 4px 12px rgba(0,0,0,0.08)}
+  .balance-card h3{color:#666;font-size:14px;font-weight:500}
+  .balance-card h1{color:#117ACA;font-size:36px;margin:10px 0}
+  .section{background:#fff;margin:15px 20px;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
+  .section h2{color:#117ACA;font-size:18px;margin-bottom:15px}
+  .page{display:none} .active{display:block}
+  input{width:100%;padding:14px;border:1px solid #E0E0E0;border-radius:10px;margin:8px 0;font-size:16px}
+  button{width:100%;padding:14px;background:#117ACA;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin:8px 0}
+  button.secondary{background:#E8F0FE;color:#117ACA}
+  button.admin{background:#6B46C1} 
+  button.logout{background:#D32F2F}
+  ul{list-style:none} 
+  li{background:#F8F9FA;margin:8px 0;padding:12px;border-radius:8px;font-size:14px;border-left:3px solid #117ACA}
+  .loading{text-align:center;padding:20px;color:#666}
+</style>
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage" class="active">
+  <div class="header"><h1>CHASE BANK</h1><p>Secure Online Banking</p></div>
+  <div class="section">
+    <h2>Open New Account</h2>
+    <input id="name" placeholder="Full Name">
+    <input id="pin" type="password" placeholder="Create 4-Digit PIN" maxlength="4">
+    <button onclick="createAccount()">Create Account</button>
+  </div>
+  <div class="section">
+    <h2>Sign In</h2>
+    <input id="accNum" placeholder="Account Number">
+    <input id="loginPin" type="password" placeholder="Enter PIN">
+    <button onclick="login()">Login</button>
+  </div>
+</div>
+
+<!-- DASHBOARD PAGE -->
+<div id="dashboardPage" class="page">
+  <div class="header"><h1>Welcome</h1><p id="welcomeName"></p></div>
+  <div class="balance-card">
+    <h3>Available Balance</h3>
+    <h1 id="balance">$0.00</h1>
+    <p style="color:#666">Account: <span id="accDisplay"></span></p>
+  </div>
+  <div class="section">
+    <h2>Deposit Funds</h2>
+    <input id="depositAmt" type="number" placeholder="Enter Amount">
+    <button onclick="deposit()">Deposit</button>
+  </div>
+  <div class="section">
+    <h2>Withdraw Funds</h2>
+    <input id="withdrawAmt" type="number" placeholder="Enter Amount">
+    <button onclick="withdraw()">Withdraw</button>
+  </div>
+  <div class="section">
+    <h2>Transfer Money</h2>
+    <input id="recipient" placeholder="Recipient Account Number">
+    <input id="transferAmt" type="number" placeholder="Amount">
+    <button onclick="transfer()">Send Money</button>
+  </div>
+  <div class="section">
+    <button class="secondary" onclick="showPage('historyPage')">📜 Transaction History</button>
+    <button class="admin" onclick="admin()">👑 Admin Panel</button>
+    <button class="logout" onclick="logout()">Sign Out</button>
+  </div>
+</div>
+
+<!-- HISTORY PAGE -->
+<div id="historyPage" class="page">
+  <div class="header"><h1>Transaction History</h1></div>
+  <div class="section">
+    <ul id="history"></ul>
+    <button class="secondary" onclick="showPage('dashboardPage')">← Back to Dashboard</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+// ⚠️ PASTE YOUR FIREBASE CONFIG HERE
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN", 
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+let current = null;
+const ADMIN_PIN = '0000';
+const fmt = n => '$'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+function showPage(id){
+  document.querySelectorAll('.page, #loginPage').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if(id=='dashboardPage') updateUI();
+  if(id=='historyPage') loadHistory();
+}
+
+window.createAccount = async () => {
+  const name=document.getElementById('name').value.trim();
+  const pin=document.getElementById('pin').value;
+  if(!name||pin.length!==4){alert('Enter name and 4 digit PIN');return}
+  const acc='CH'+Math.floor(100000+Math.random()*900000);
+  await setDoc(doc(db, "accounts", acc), {
+    name, account:acc, pin, balance:0, 
+    history:[new Date().toLocaleString()+' - Account Created']
+  });
+  alert('✅ Account Created!\n\nYour Account Number: '+acc+'\nSave this number!');
+  document.getElementById('name').value=''; document.getElementById('pin').value='';
+}
+
+window.login = async () => {
+  const acc=document.getElementById('accNum').value.trim();
+  const pin=document.getElementById('loginPin').value;
+  const snap = await getDoc(doc(db, "accounts", acc));
+  if(snap.exists() && snap.data().pin === pin){
+    current = snap.data();
+    showPage('dashboardPage');
+  } else {alert('❌ Invalid Account Number or PIN')}
+}
+
+window.deposit = async () => {
+  const amt=parseFloat(document.getElementById('depositAmt').value);
+  if(amt<=0){alert('Enter valid amount');return}
+  current.balance += amt;
+  current.history.push(new Date().toLocaleString()+' - Deposited '+fmt(amt));
+  await updateDoc(doc(db, "accounts", current.account), {balance: current.balance, history: current.history});
+  document.getElementById('depositAmt').value='';
+  alert('✅ '+fmt(amt)+' Deposited Successfully');
+  updateUI();
+}
+
+window.withdraw = async () => {
+  const amt=parseFloat(document.getElementById('withdrawAmt').value);
+  if(amt<=0){alert('Enter valid amount');return}
+  if(amt>current.balance){alert('❌ Insufficient funds');return}
+  current.balance -= amt;
+  current.history.push(new Date().toLocaleString()+' - Withdrew '+fmt(amt));
+  await updateDoc(doc(db, "accounts", current.account), {balance: current.balance, history: current.history});
+  document.getElementById('withdrawAmt').value='';
+  alert('✅ '+fmt(amt)+' Withdrawn Successfully');
+  updateUI();
+}
+
+window.transfer = async () => {
+  const recAcc=document.getElementById('recipient').value.trim();
+  const amt=parseFloat(document.getElementById('transferAmt').value);
+  if(amt<=0){alert('Enter valid amount');return}
+  if(amt>current.balance){alert('❌ Insufficient funds');return}
+  const recSnap = await getDoc(doc(db, "accounts", recAcc));
+  if(!recSnap.exists()){alert('❌ Recipient account not found');return}
+  
+  let recData = recSnap.data();
+  current.balance -= amt;
+  recData.balance += amt;
+  
+  current.history.push(new Date().toLocaleString()+' - Sent '+fmt(amt)+' to '+recAcc);
+  recData.history.push(new Date().toLocaleString()+' - Received '+fmt(amt)+' from '+current.account);
+  
+  await updateDoc(doc(db, "accounts", current.account), {balance: current.balance, history: current.history});
+  await updateDoc(doc(db, "accounts", recAcc), {balance: recData.balance, history: recData.history});
+  
+  document.getElementById('recipient').value=''; document.getElementById('transferAmt').value='';
+  alert('✅ '+fmt(amt)+' Sent to '+recAcc);
+  updateUI();
+}
+
+function updateUI(){
+  document.getElementById('balance').innerText=fmt(current.balance);
+  document.getElementById('accDisplay').innerText=current.account;
+  document.getElementById('welcomeName').innerText='Hello, '+current.name;
+}
+
+function loadHistory(){
+  const histList = document.getElementById('history');
+  if(current.history.length===0){histList.innerHTML='<li>No transactions yet</li>';return}
+  histList.innerHTML = current.history.reverse().map(h=>`<li>${h}</li>`).join('');
+}
+
+window.admin = async () => {
+  const p=prompt('Enter Admin PIN');
+  if(p!==ADMIN_PIN){alert('❌ Wrong PIN');return}
+  document.getElementById('history').innerHTML='<li class="loading">Loading all users...</li>';
+  const qSnap = await getDocs(collection(db, "accounts"));
+  let all = 'ALL CHASE BANK USERS:\n\n';
+  let total = 0;
+  qSnap.forEach(doc=>{
+    const d = doc.data();
+    all += `Name: ${d.name}\nAccount: ${d.account}\nBalance: ${fmt(d.balance)}\n\n`;
+    total += d.balance;
+  });
+  all += `TOTAL BANK BALANCE: ${fmt(total)}`;
+  alert(all);
+}
+
+window.logout = () => {
+  current=null;
+  document.getElementById('accNum').value=''; 
+  document.getElementById('loginPin').value='';
+  showPage('loginPage');
+}
+</script>
+</body>
+</html>
